@@ -4,16 +4,18 @@ import argparse
 from tqdm import tqdm
 from datetime import datetime, timedelta
 
+with open("config.json") as f:
+    defaults = json.load(f)
 parser = argparse.ArgumentParser()
-parser.add_argument("overseerr_url", help="overseerr host url")
-parser.add_argument("overseerr_token", help="overseerr api token")
-parser.add_argument("tautulli_url", help="tautulli host url")
-parser.add_argument("tautulli_token", help="tautulli api token")
+parser.add_argument("--overseerr-url", default=defaults["overseerr_url"], help="overseerr host url")
+parser.add_argument("--overseerr-token", default=defaults["overseerr_token"], help="overseerr api token")
+parser.add_argument("--tautulli-url", default=defaults["tautulli_url"], help="tautulli host url")
+parser.add_argument("--tautulli-token", default=defaults["tautulli_token"], help="tautulli api token")
 args = parser.parse_args()
 
 overseerr_request = f"{args.overseerr_url}/api/v1/request?take=500&filter=available"
 headers = {
-    "Content-type": "application/jso",
+    "Content-type": "application/json",
     "x-api-key": args.overseerr_token
 }
 

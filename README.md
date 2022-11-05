@@ -30,4 +30,15 @@ This allows a Plex admin to remove requests that were not truly desired by a use
 
 ### Usage
 
-`python3 find_unwatched_requests.py <overseerr_host_url> <overseerr_api_token> <tautulli_host_url> <tautulli_api_token>`
+If config file has been filled out:
+
+`python3 find_unwatched_requests.py`
+
+Alternatively:
+```
+python3 find_unwatched_requests.py \
+    --overseerr-host-url <overseerr_host_url> \
+    --overseerr-token <overseerr_api_token> \
+    --tautulli-url <tautulli_host_url> \
+    --tautulli-token <tautulli_api_token>
+```

@@ -1,3 +1,4 @@
+import re
 import json
 import requests
 import argparse
@@ -11,6 +12,8 @@ parser.add_argument("--overseerr-url", default=defaults["overseerr_url"], help="
 parser.add_argument("--overseerr-token", default=defaults["overseerr_token"], help="overseerr api token")
 parser.add_argument("--tautulli-url", default=defaults["tautulli_url"], help="tautulli host url")
 parser.add_argument("--tautulli-token", default=defaults["tautulli_token"], help="tautulli api token")
+parser.add_argument("--radarr-token", default=defaults["radarr_token"], help="radarr api token")
+parser.add_argument("--sonarr-token", default=defaults["sonarr_token"], help="sonarr api token")
 args = parser.parse_args()
 args.tautulli_url = args.tautulli_url.rstrip("/")
 
@@ -50,3 +53,31 @@ print("| {:60} | {:20} | {:30} | {:100} |".format(*["Title", "Requested By", "Da
 print("-"*223)
 for result in results:
     print("| {:60} | {:20} | {:30} | {:100} |".format(*result))
+
+if input(f"Delete all unwatched movies? Y/N: ").lower() == "y":
+    movies = None
+    radarr_host = None
+    for result in results:
+        if "movie" in result[3]:
+            radarr_host = re.search(r"http*://\d+.\d+.\d+.\d+[^/]*", result[3]).group(0)
+            movies_request = f"{radarr_host}/api/v3/movie/?apikey={args.radarr_token}"
+            movies = json.loads(requests.get(movies_request).text)
+            break
+    if not radarr_host or not movies:
+        print("[ERROR] No radarr_url found, or no movies found through the api!")
+        exit()
+    else:
+        for result in results:
+            if ":7878" in result[3]:
+                movie_url = result[3].split("/")
+                id = None
+                for movie in movies:
+                    if movie["title"] == result[0]:
+                        id = movie["movieFile"]["movieId"]
+                if id:
+                    radarr_delete_url = f"{radarr_host}/api/v3/movie/{id}?apikey={args.radarr_token}&deleteFiles=true"
+                    response = requests.delete(radarr_delete_url)
+                    if response.status_code == 200:
+                        print(f"Deleted {result[0]}")
+                else:
+                    print(f"Failed to delete {result[0]}, likely due to a title mismatch between Overseerr and Radarr.")

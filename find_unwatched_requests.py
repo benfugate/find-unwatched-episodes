@@ -12,6 +12,7 @@ parser.add_argument("--overseerr-token", default=defaults["overseerr_token"], he
 parser.add_argument("--tautulli-url", default=defaults["tautulli_url"], help="tautulli host url")
 parser.add_argument("--tautulli-token", default=defaults["tautulli_token"], help="tautulli api token")
 args = parser.parse_args()
+args.tautulli_url = args.tautulli_url.rstrip("/")
 
 overseerr_request = f"{args.overseerr_url}/api/v1/request?take=500&filter=available"
 headers = {

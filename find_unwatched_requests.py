@@ -15,7 +15,7 @@ args = parser.parse_args()
 
 overseerr_request = f"{args.overseerr_url}/api/v1/request?take=500&filter=available"
 headers = {
-    "Content-type": "application/jso",
+    "Content-type": "application/json",
     "x-api-key": args.overseerr_token
 }
 

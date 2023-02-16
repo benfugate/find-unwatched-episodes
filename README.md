@@ -6,6 +6,7 @@ This is a simple script that looks through the last 500 Overseerr requests and..
 2. Filters out any that have not been available for 1 month
 3. Filters out any that have not been available for 1 month
 4. <b>Displays the unwatched movies/shows to the user</b>
+5. <b>Delete the unwatched media from the server</b>
 
 This allows a Plex admin to remove requests that were not truly desired by a user.
 
@@ -18,6 +19,10 @@ This allows a Plex admin to remove requests that were not truly desired by a use
   * To see what has been requested, and when it became available
 * Tautulli
   * To see when a show has been watched
+
+#### Optional services
+* Sonarr & Radarr
+  * Used to optionally delete content from the server
 
 #### Pip packages
 

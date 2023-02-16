@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+
 import re
 import json
 import requests
@@ -16,6 +18,60 @@ parser.add_argument("--radarr-token", default=defaults["radarr_token"], help="ra
 parser.add_argument("--sonarr-token", default=defaults["sonarr_token"], help="sonarr api token")
 args = parser.parse_args()
 args.tautulli_url = args.tautulli_url.rstrip("/")
+
+def delete_content(delete_series=False, delete_movies=False):
+    series = None
+    movies = None
+    sonarr_host = None
+    radarr_host = None
+    for result in results:
+        if delete_series and "series" in result[3]:
+            sonarr_host = re.search(r"http.*?://[^/]*", result[3]).group(0)
+            series_request = f"{sonarr_host}/api/v3/series/?apikey={args.sonarr_token}"
+            series = json.loads(requests.get(series_request).text)
+        elif delete_movies and "movie" in result[3]:
+            radarr_host = re.search(r"http.*?://[^/]*", result[3]).group(0)
+            movies_request = f"{radarr_host}/api/v3/movie/?apikey={args.radarr_token}"
+            movies = json.loads(requests.get(movies_request).text)
+
+    if delete_series and not sonarr_host or not series:
+        delete_series = False
+    if delete_movies and not radarr_host or not movies:
+        delete_movies = False
+
+    for result in results:
+        id = None
+        endpoint = result[3].split("/")[-1]
+        if "/series/" in result[3]:
+            if not delete_series:
+                continue
+            for show in series:
+                if show["titleSlug"] == endpoint:
+                    id = show["id"]
+            if id:
+                delete_url = f"{sonarr_host}/api/v3/series/{id}?apikey={args.sonarr_token}&deleteFiles=true"
+            else:
+                print(f"Failed to delete {result[0]}")
+                continue
+        elif "/movie/" in results[3]:
+            if not delete_movies:
+                continue
+            endpoint = result[3].split("/")[-1]
+            id = None
+            for movie in movies:
+                if movie["titleSlug"] == endpoint:
+                    id = movie["id"]
+            if id:
+                delete_url = f"{radarr_host}/api/v3/movie/{id}?apikey={args.radarr_token}&deleteFiles=true"
+            else:
+                print(f"Failed to delete {result[0]}")
+                continue
+
+        response = requests.delete(delete_url)
+        if response.status_code == 200:
+            print(f"Deleted {result[0]}")
+        else:
+            print(f"Failed to delete {result[0]}")
 
 overseerr_request = f"{args.overseerr_url}/api/v1/request?take=500&filter=available"
 headers = {
@@ -49,35 +105,18 @@ for plex_request in tqdm(plex_requests["results"]):
         results.append([title, requestedBy, str(mediaAddedAt), plex_request["media"]["serviceUrl"]])
 
 results = sorted(results, key=lambda l: l[2])  # Sort by oldest request to most recent
-print("| {:60} | {:20} | {:30} | {:100} |".format(*["Title", "Requested By", "Date Available", "Sonarr URL"]))
+if not results:
+    print("No unwatched content found :)")
+    exit()
+
+print("| {:60} | {:20} | {:30} | {:100} |".format(*["Title", "Requested By", "Date Available", "Management URL"]))
 print("-"*223)
 for result in results:
     print("| {:60} | {:20} | {:30} | {:100} |".format(*result))
 
-if input(f"Delete all unwatched movies? Y/N: ").lower() == "y":
-    movies = None
-    radarr_host = None
-    for result in results:
-        if "movie" in result[3]:
-            radarr_host = re.search(r"http*://\d+.\d+.\d+.\d+[^/]*", result[3]).group(0)
-            movies_request = f"{radarr_host}/api/v3/movie/?apikey={args.radarr_token}"
-            movies = json.loads(requests.get(movies_request).text)
-            break
-    if not radarr_host or not movies:
-        print("[ERROR] No radarr_url found, or no movies found through the api!")
-        exit()
-    else:
-        for result in results:
-            if ":7878" in result[3]:
-                movie_url = result[3].split("/")
-                id = None
-                for movie in movies:
-                    if movie["title"] == result[0]:
-                        id = movie["movieFile"]["movieId"]
-                if id:
-                    radarr_delete_url = f"{radarr_host}/api/v3/movie/{id}?apikey={args.radarr_token}&deleteFiles=true"
-                    response = requests.delete(radarr_delete_url)
-                    if response.status_code == 200:
-                        print(f"Deleted {result[0]}")
-                else:
-                    print(f"Failed to delete {result[0]}, likely due to a title mismatch between Overseerr and Radarr.")
+delete_movies, delete_series = False, False
+if args.radarr_token and input(f"Delete all unwatched movies? Y/N: ").lower() == "y":
+    delete_series = True
+if args.sonarr_token and input(f"Delete all unwatched shows? Y/N: ").lower() == "y":
+    delete_movies = True
+delete_content(delete_series, delete_movies)

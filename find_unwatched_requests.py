@@ -2,38 +2,69 @@
 
 import re
 import json
+import time
 import requests
 import argparse
+import traceback
 from tqdm import tqdm
 from datetime import datetime, timedelta
+
 
 class FindUnwatchedRequests:
     def __init__(self):
         with open("config.json") as f:
             defaults = json.load(f)
         parser = argparse.ArgumentParser()
-        parser.add_argument("--overseerr-url", default=defaults["overseerr_url"], help="overseerr host url")
+        parser.add_argument("--skip-health-check", action="store_true", help="skip the pre-run health check")
+        parser.add_argument("--overseerr-host", default=defaults["overseerr_host"], help="overseerr host url")
         parser.add_argument("--overseerr-token", default=defaults["overseerr_token"], help="overseerr api token")
-        parser.add_argument("--tautulli-url", default=defaults["tautulli_url"], help="tautulli host url")
+        parser.add_argument("--tautulli-host", default=defaults["tautulli_host"], help="tautulli host url")
         parser.add_argument("--tautulli-token", default=defaults["tautulli_token"], help="tautulli api token")
+        parser.add_argument("--verbose", action="store_true", help="Run in verbose mode")
         self.args = parser.parse_args()
-        self.args.tautulli_url = self.args.tautulli_url.rstrip("/")
+        self.args.tautulli_host = self.args.tautulli_host.rstrip("/")
+
+        # Check to make sure an availability sync is not currently being run on Overseerr
+        if not self.args.skip_health_check:
+            self._check_health()
+
+        self.radarr_host = None
         self.radarr_token = None
+        self.sonarr_host = None
         self.sonarr_token = None
 
         self.unwatched_requests = []
-        self.sonarr_host = None
-        self.radarr_host = None
-        self.all_content = None
+        self.all_content = []
         self.delete = []
 
-    def _overseerr_request(self, endpoint):
+    def _check_health(self):
+        issues = []
+        jobs = self._get_overseerr_jobs()
+        for job in jobs:
+            if job["id"] == "availability-sync":
+                if job["running"]:
+                    issues.append("[ERROR] Overseerr availability sync is running. Invalid content could be detected.\n"
+                                  "\tPlease try running again in a couple of minutes.")
+        if issues:
+            for issue in issues:
+                print(issue)
+            exit(0)
+
+    def _overseerr_get_request(self, endpoint):
         headers = {
             "Content-type": "application/json",
             "x-api-key": self.args.overseerr_token
         }
-        return json.loads(requests.get(f"{endpoint}", headers=headers).text)
+        # return json.loads(requests.get(f"{endpoint}", headers=headers).text)
+        return requests.get(f"{endpoint}", headers=headers).json()
 
+    def _overseerr_post_request(self, endpoint, data={}):
+        headers = {
+            "Content-type": "application/json",
+            "x-api-key": self.args.overseerr_token
+        }
+        # return json.loads(requests.get(f"{endpoint}", headers=headers).text)
+        return requests.post(f"{endpoint}", data=data, headers=headers).json()
 
     def _find_management_hosts(self):
         def add_scheme(host):
@@ -42,8 +73,8 @@ class FindUnwatchedRequests:
             else:
                 host["scheme"] = "http://"
             return host
-        sonarr_host = add_scheme(self._overseerr_request(f"{self.args.overseerr_url}/api/v1/settings/sonarr")[0])
-        radarr_host = add_scheme(self._overseerr_request(f"{self.args.overseerr_url}/api/v1/settings/radarr")[0])
+        sonarr_host = add_scheme(self._overseerr_get_request(f"{self.args.overseerr_host}/api/v1/settings/sonarr")[0])
+        radarr_host = add_scheme(self._overseerr_get_request(f"{self.args.overseerr_host}/api/v1/settings/radarr")[0])
         self.sonarr_host = f"{sonarr_host['scheme']}{sonarr_host['hostname']}:{sonarr_host['port']}"
         self.radarr_host = f"{radarr_host['scheme']}{radarr_host['hostname']}:{radarr_host['port']}"
         self.sonarr_token = sonarr_host["apiKey"]
@@ -51,61 +82,82 @@ class FindUnwatchedRequests:
 
     def _grab_content_library(self):
         self._find_management_hosts()
-        all_series, all_movies = {}, {}
+        all_series, all_movies = [], []
         if "series" in self.delete:
             series_request = f"{self.sonarr_host}/api/v3/series/?apikey={self.sonarr_token}"
-            all_series = json.loads(requests.get(series_request).text)[0]
-        if "movies" in self.delete:
+            all_series = json.loads(requests.get(series_request).text)
+        if "movie" in self.delete:
             movies_request = f"{self.radarr_host}/api/v3/movie/?apikey={self.radarr_token}"
-            all_movies = json.loads(requests.get(movies_request).text)[0]
-        self.all_content = {**all_series, **all_movies}
+            all_movies = json.loads(requests.get(movies_request).text)
+        self.all_content += all_series + all_movies
 
     def _get_host_info(self, url):
-        content_type = re.search(r"(movies|series)", url).group(1)
-        if content_type == "movies":
-            return {"host": self.radarr_host, "token": self.radarr_token}
+        content_type = re.search(r"(movie|series)", url).group(1)
+        if content_type == "movie":
+            return {"host": self.radarr_host, "token": self.radarr_token,
+                    "content_type": content_type, "platform": "Radarr"}
         elif content_type == "series":
-            return {"host": self.sonarr_host, "token": self.sonarr_token, "content_type": content_type}
+            return {"host": self.sonarr_host, "token": self.sonarr_token,
+                    "content_type": content_type, "platform": "Sonarr"}
+
+    def _get_overseerr_jobs(self):
+        url = f"{self.args.overseerr_host}/api/v1/settings/jobs/"
+        return self._overseerr_get_request(url)
+
+    def run_post_job(self, job, data=None):
+        url = f"{self.args.overseerr_host}/api/v1/settings/jobs/{job}/run"
+        self._overseerr_post_request(url, data)
 
     def delete_content(self):
+        content_deleted = False
         self._grab_content_library()
         for request in self.unwatched_requests:
-            id = None
-            endpoint = request[3].split("/")[-1]
-            if bool([content for content in self.delete if(content in request[3])]):
-                host = self._get_host_info(request[3])
-                for content in self.all_content:
-                    if content["titleSlug"] == endpoint:
-                        id = content["id"]
-                if id:
-                    delete_url = f"{host['host']}/api/v3/series/{host['content_type']}?apikey={host['token']}&deleteFiles=true"
+            try:
+                content_id = None
+                if bool([content for content in self.delete if(content in request['service_url'])]):
+                    host = self._get_host_info(request['service_url'])
+                    title_slug = request['service_url'].split("/")[-1]
+                    for content in self.all_content:
+                        if content["titleSlug"] == title_slug:
+                            content_id = content["id"]
+                            break
+                    if content_id:
+                        delete_url = f"{host['host']}/api/v3/{host['content_type']}/{content_id}" \
+                                     f"?apikey={host['token']}&deleteFiles=true"
+                    else:
+                        print(f"Failed to find the {host['content_type']} {request['title']} on "
+                              f"{host['platform']}. Skipping")
+                        continue
                 else:
-                    print(f"Failed to delete {request[0]}")
                     continue
-            else:
-                continue
 
-            response = requests.delete(delete_url)
-            if response.status_code == 200:
-                print(f"Deleted {request[0]}")
-            else:
-                print(f"Failed to delete {request[0]}")
-
+                response = requests.delete(delete_url)
+                if response.status_code == 200:
+                    print(f"Deleted {request['title']}")
+                    content_deleted = True
+                else:
+                    print(f"Failed to delete {request['title']}")
+            except Exception as e:
+                print(f"Error deleting \"{request['title']}\". Skipping.")
+                if self.args.verbose:
+                    print(traceback.format_exc())
+        return content_deleted
 
     def display_unwatched_requests(self):
         if not self.unwatched_requests:
             print("No unwatched content found :)")
             exit()
 
-        print("| {:60} | {:20} | {:30} | {:100} |".format(*["Title", "Requested By", "Date Available", "Management URL"]))
+        print("| {:60} | {:20} | {:30} | {:100} |".format(
+            *["Title", "Requested By", "Date Available", "Management URL"]
+        ))
         print("-"*223)
         for request in self.unwatched_requests:
-            print("| {:60} | {:20} | {:30} | {:100} |".format(*request))
-
+            print("| {:60} | {:20} | {:30} | {:100} |".format(*request.values()))
 
     def find_unwatched_requests(self):
-        request_url = f"{self.args.overseerr_url}/api/v1/request?take=500&filter=available"
-        plex_requests = self._overseerr_request(request_url)
+        request_url = f"{self.args.overseerr_host}/api/v1/request?take=500&filter=available"
+        plex_requests = self._overseerr_get_request(request_url)
         results = []
         for plex_request in tqdm(plex_requests["results"]):
             media_added_at = plex_request["media"]["mediaAddedAt"]
@@ -117,28 +169,54 @@ class FindUnwatchedRequests:
             if not media_added_at or media_added_at > one_month_ago:
                 continue
 
-            tautulli_request = f"{self.args.tautulli_url}/api/v2?apikey={self.args.tautulli_token}&cmd=get_item_watch_time_stats&rating_key={plex_request['media']['ratingKey']}"
+            tautulli_request = f"{self.args.tautulli_host}/api/v2?apikey={self.args.tautulli_token}" \
+                               f"&cmd=get_item_watch_time_stats&rating_key={plex_request['media']['ratingKey']}"
             response = requests.get(tautulli_request)
             watch_data = json.loads(response.text)["response"]["data"]
             watch_number = [item["total_plays"] for item in watch_data]
             if not any(watch_number):
-                response = requests.get(f"{self.args.tautulli_url}/api/v2?apikey={self.args.tautulli_token}&cmd=get_metadata&rating_key={plex_request['media']['ratingKey']}")
+                response = requests.get(f"{self.args.tautulli_host}/api/v2?apikey={self.args.tautulli_token}"
+                                        f"&cmd=get_metadata&rating_key={plex_request['media']['ratingKey']}")
                 try:
                     title = json.loads(response.text)["response"]["data"]["title"]
                 except Exception as e:
                     continue  # This show was probably recently deleted, found on overseerr but not on Tautulli
-                results.append([title, media_requested_by, str(media_added_at), plex_request["media"]["serviceUrl"]])
+                results.append({
+                    "title": title,
+                    "media_requested_by": media_requested_by,
+                    "media_added_at": str(media_added_at),
+                    "service_url": plex_request["media"]["serviceUrl"]
+                })
 
-        self.unwatched_requests = sorted(results, key=lambda l: l[2])  # Sort by oldest request to most recent
+        # Sort by oldest request to most recent
+        self.unwatched_requests = sorted(results, key=lambda d: d["media_added_at"])
+
 
 if __name__ == '__main__':
     find_unwatched = FindUnwatchedRequests()
     find_unwatched.find_unwatched_requests()
     find_unwatched.display_unwatched_requests()
 
-    if find_unwatched.args.radarr_token and input(f"Delete all unwatched movies? Y/N: ").lower() == "y":
-        find_unwatched.delete.append("movies")
-    if find_unwatched.args.sonarr_token and input(f"Delete all unwatched shows? Y/N: ").lower() == "y":
+    if input(f"Delete all unwatched movies? Y/N: ").lower() == "y":
+        find_unwatched.delete.append("movie")
+    if input(f"Delete all unwatched shows? Y/N: ").lower() == "y":
         find_unwatched.delete.append("series")
     if find_unwatched.delete:
-        find_unwatched.delete_content()
+        run_availability_sync = False
+        try:
+            run_availability_sync = find_unwatched.delete_content()
+        except Exception as e:
+            print(traceback.format_exc())
+        finally:
+            if run_availability_sync:
+                print("Waiting 30 seconds for Plex to detect changes and refresh, and then triggering an Overseer "
+                      "availability sync job.")
+                for timer in range(30):
+                    print(f"\r{timer}", end="")
+                    time.sleep(1)
+                find_unwatched.run_post_job("availability-sync")
+        if not run_availability_sync:
+            print("\nNothing was deleted, so an availability sync was not triggered.")
+            if input("Would you like to run one anyways? Y/N: ").lower() == "y":
+                find_unwatched.run_post_job("availability-sync")
+    print("\rDone!")

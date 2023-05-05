@@ -2,9 +2,9 @@
 
 This is a simple script that looks through the last 500 Overseerr requests and...
 
-1. Filters out any that have not been marked as available
-2. Filters out any that have not been available for 1 month
-3. Filters out any that have not been available for 1 month
+1. Filters out any request that has not been marked as available
+2. Filters out any request that has not been available for at least 1 month
+3. Filters out any request that has not been watched by any user
 4. <b>Displays the unwatched movies/shows to the user</b>
 5. <b>Delete the unwatched media from the server</b>
 

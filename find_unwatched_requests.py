@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 
 import re
 import json
@@ -22,7 +22,10 @@ class FindUnwatchedRequests:
         parser.add_argument("--tautulli-token", default=defaults["tautulli_token"], help="tautulli api token")
         parser.add_argument("--verbose", action="store_true", help="Run in verbose mode")
         self.args = parser.parse_args()
+
+        # Some hosts API's get real fussy about extra slashes
         self.args.tautulli_host = self.args.tautulli_host.rstrip("/")
+        self.args.overseerr_host = self.args.overseerr_host.rstrip("/")
 
         # Check to make sure an availability sync is not currently being run on Overseerr
         if not self.args.skip_health_check:
@@ -33,6 +36,7 @@ class FindUnwatchedRequests:
         self.sonarr_host = None
         self.sonarr_token = None
 
+        self.unwatched_media_types = []
         self.unwatched_requests = []
         self.all_content = []
         self.delete = []
@@ -64,7 +68,9 @@ class FindUnwatchedRequests:
             "x-api-key": self.args.overseerr_token
         }
         # return json.loads(requests.get(f"{endpoint}", headers=headers).text)
-        return requests.post(f"{endpoint}", data=data, headers=headers).json()
+        response = requests.post(f"{endpoint}", data=data, headers=headers)
+        if response.status_code == 404:
+            print(f"Error with POST request:\n\tError: {response}\n\t{endpoint}: {data}")
 
     def _find_management_hosts(self):
         def add_scheme(host):
@@ -91,8 +97,7 @@ class FindUnwatchedRequests:
             all_movies = json.loads(requests.get(movies_request).text)
         self.all_content += all_series + all_movies
 
-    def _get_host_info(self, url):
-        content_type = re.search(r"(movie|series)", url).group(1)
+    def _get_host_info(self, content_type):
         if content_type == "movie":
             return {"host": self.radarr_host, "token": self.radarr_token,
                     "content_type": content_type, "platform": "Radarr"}
@@ -115,7 +120,7 @@ class FindUnwatchedRequests:
             try:
                 content_id = None
                 if bool([content for content in self.delete if(content in request['service_url'])]):
-                    host = self._get_host_info(request['service_url'])
+                    host = self._get_host_info(request[request["type"]])
                     title_slug = request['service_url'].split("/")[-1]
                     for content in self.all_content:
                         if content["titleSlug"] == title_slug:
@@ -183,10 +188,13 @@ class FindUnwatchedRequests:
                     continue  # This show was probably recently deleted, found on overseerr but not on Tautulli
                 results.append({
                     "title": title,
+                    "type": plex_request["type"],
                     "media_requested_by": media_requested_by,
                     "media_added_at": str(media_added_at),
                     "service_url": plex_request["media"]["serviceUrl"]
                 })
+                if plex_request["type"] not in self.unwatched_media_types:
+                    self.unwatched_media_types.append(plex_request["type"])
 
         # Sort by oldest request to most recent
         self.unwatched_requests = sorted(results, key=lambda d: d["media_added_at"])
@@ -197,9 +205,9 @@ if __name__ == '__main__':
     find_unwatched.find_unwatched_requests()
     find_unwatched.display_unwatched_requests()
 
-    if input(f"Delete all unwatched movies? Y/N: ").lower() == "y":
+    if "movie" in find_unwatched.unwatched_media_types and input(f"Delete all unwatched movies? Y/N: ").lower() == "y":
         find_unwatched.delete.append("movie")
-    if input(f"Delete all unwatched shows? Y/N: ").lower() == "y":
+    if "series" in find_unwatched.unwatched_media_types and input(f"Delete all unwatched shows? Y/N: ").lower() == "y":
         find_unwatched.delete.append("series")
     if find_unwatched.delete:
         run_availability_sync = False

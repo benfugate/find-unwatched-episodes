@@ -120,7 +120,7 @@ class FindUnwatchedRequests:
             try:
                 content_id = None
                 if bool([content for content in self.delete if(content in request['service_url'])]):
-                    host = self._get_host_info(request[request["type"]])
+                    host = self._get_host_info(request["type"])
                     title_slug = request['service_url'].split("/")[-1]
                     for content in self.all_content:
                         if content["titleSlug"] == title_slug:
@@ -153,18 +153,19 @@ class FindUnwatchedRequests:
             print("No unwatched content found :)")
             exit()
 
-        print("| {:60} | {:20} | {:30} | {:100} |".format(
-            *["Title", "Requested By", "Date Available", "Management URL"]
+        print("| {:60} | {:6} | {:20} | {:30} | {:100} |".format(
+            *["Title", "Type", "Requested By", "Date Available", "Management URL"]
         ))
         print("-"*223)
         for request in self.unwatched_requests:
-            print("| {:60} | {:20} | {:30} | {:100} |".format(*request.values()))
+            print("| {:60} | {:6} | {:20} | {:30} | {:100} |".format(*request.values()))
 
     def find_unwatched_requests(self):
         request_url = f"{self.args.overseerr_host}/api/v1/request?take=500&filter=available"
         plex_requests = self._overseerr_get_request(request_url)
         results = []
         for plex_request in tqdm(plex_requests["results"]):
+            plex_request["type"] = "series" if plex_request["type"] == "tv" else plex_request["type"]
             media_added_at = plex_request["media"]["mediaAddedAt"]
             media_requested_by = plex_request["requestedBy"]["plexUsername"]
             one_month_ago = (datetime.utcnow() - timedelta(days=30))

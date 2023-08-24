@@ -15,12 +15,20 @@ class FindUnwatchedRequests:
         with open("config.json") as f:
             defaults = json.load(f)
         parser = argparse.ArgumentParser()
-        parser.add_argument("--skip-health-check", action="store_true", help="skip the pre-run health check")
-        parser.add_argument("--overseerr-host", default=defaults["overseerr_host"], help="overseerr host url")
-        parser.add_argument("--overseerr-token", default=defaults["overseerr_token"], help="overseerr api token")
-        parser.add_argument("--tautulli-host", default=defaults["tautulli_host"], help="tautulli host url")
-        parser.add_argument("--tautulli-token", default=defaults["tautulli_token"], help="tautulli api token")
-        parser.add_argument("--num-requests", default=defaults["num_requests"], help="number of overseerr requests to look through")
+        parser.add_argument("--skip-health-check", action="store_true",
+                            help="skip the pre-run health check")
+        parser.add_argument("--overseerr-host", default=defaults["overseerr_host"],
+                            help="overseerr host url")
+        parser.add_argument("--overseerr-token", default=defaults["overseerr_token"],
+                            help="overseerr api token")
+        parser.add_argument("--tautulli-host", default=defaults["tautulli_host"],
+                            help="tautulli host url")
+        parser.add_argument("--tautulli-token", default=defaults["tautulli_token"],
+                            help="tautulli api token")
+        parser.add_argument("--num-requests", default=defaults["num_requests"],
+                            help="number of overseerr requests to look through")
+        parser.add_argument("--ignore-users", default=defaults["ignore_users"], action="extend",
+                            nargs='+', type=str, help="users to not include in unwatched requests scan")
         parser.add_argument("--verbose", action="store_true", help="Run in verbose mode")
         self.args = parser.parse_args()
 
@@ -169,7 +177,7 @@ class FindUnwatchedRequests:
             with tqdm(total=self.args.num_requests) as pbar:
                 for result in pool.imap_unordered(self.get_request, plex_requests):
                     pbar.update()
-                    if result is not None:
+                    if result is not None and result["media_requested_by"] not in self.args.ignore_users:
                         results.append(result)
                         if result["type"] not in self.unwatched_media_types:
                             self.unwatched_media_types.append(result["type"])

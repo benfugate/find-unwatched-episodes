@@ -3,5 +3,6 @@
   "overseerr_token": "",
   "tautulli_host": "",
   "tautulli_token": "",
-  "num_requests": 100
+  "num_requests": 500,
+  "ignore_users": []
 }

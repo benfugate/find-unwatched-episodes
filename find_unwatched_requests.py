@@ -175,7 +175,7 @@ class FindUnwatchedRequests:
         results = []
         with Pool(processes=8) as pool:
             with tqdm(total=self.args.num_requests) as pbar:
-                for result in pool.imap_unordered(self.get_request, plex_requests):
+                for result in pool.imap_unordered(self._get_request, plex_requests):
                     pbar.update()
                     if result is not None and result["media_requested_by"] not in self.args.ignore_users:
                         results.append(result)
@@ -185,7 +185,7 @@ class FindUnwatchedRequests:
         # Sort by oldest request to most recent
         self.unwatched_requests = sorted(results, key=lambda d: d["media_added_at"])
 
-    def get_request(self, plex_request):
+    def _get_request(self, plex_request):
         plex_request["type"] = "series" if plex_request["type"] == "tv" else plex_request["type"]
         media_added_at = plex_request["media"]["mediaAddedAt"]
         media_requested_by = plex_request["requestedBy"]["plexUsername"]

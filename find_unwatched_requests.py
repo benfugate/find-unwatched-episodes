@@ -7,6 +7,7 @@ import requests
 import argparse
 import traceback
 from tqdm import tqdm
+from multiprocessing import Pool
 from datetime import datetime, timedelta
 
 
@@ -20,6 +21,7 @@ class FindUnwatchedRequests:
         parser.add_argument("--overseerr-token", default=defaults["overseerr_token"], help="overseerr api token")
         parser.add_argument("--tautulli-host", default=defaults["tautulli_host"], help="tautulli host url")
         parser.add_argument("--tautulli-token", default=defaults["tautulli_token"], help="tautulli api token")
+        parser.add_argument("--num-requests", default=defaults["num_requests"], help="number of overseerr requests to look through")
         parser.add_argument("--verbose", action="store_true", help="Run in verbose mode")
         self.args = parser.parse_args()
 
@@ -161,44 +163,52 @@ class FindUnwatchedRequests:
             print("| {:60} | {:6} | {:20} | {:30} | {:100} |".format(*request.values()))
 
     def find_unwatched_requests(self):
-        request_url = f"{self.args.overseerr_host}/api/v1/request?take=500&filter=available"
-        plex_requests = self._overseerr_get_request(request_url)
+        request_url = f"{self.args.overseerr_host}/api/v1/request?take={self.args.num_requests}&filter=available"
+        plex_requests = self._overseerr_get_request(request_url)["results"]
         results = []
-        for plex_request in tqdm(plex_requests["results"]):
-            plex_request["type"] = "series" if plex_request["type"] == "tv" else plex_request["type"]
-            media_added_at = plex_request["media"]["mediaAddedAt"]
-            media_requested_by = plex_request["requestedBy"]["plexUsername"]
-            one_month_ago = (datetime.utcnow() - timedelta(days=30))
-            if media_added_at:
-                media_added_at = datetime.strptime(media_added_at, "%Y-%m-%dT%H:%M:%S.%f%z").replace(tzinfo=None)
-
-            if not media_added_at or media_added_at > one_month_ago:
-                continue
-
-            tautulli_request = f"{self.args.tautulli_host}/api/v2?apikey={self.args.tautulli_token}" \
-                               f"&cmd=get_item_watch_time_stats&rating_key={plex_request['media']['ratingKey']}"
-            response = requests.get(tautulli_request)
-            watch_data = json.loads(response.text)["response"]["data"]
-            watch_number = [item["total_plays"] for item in watch_data]
-            if not any(watch_number):
-                response = requests.get(f"{self.args.tautulli_host}/api/v2?apikey={self.args.tautulli_token}"
-                                        f"&cmd=get_metadata&rating_key={plex_request['media']['ratingKey']}")
-                try:
-                    title = json.loads(response.text)["response"]["data"]["title"]
-                except Exception as e:
-                    continue  # This show was probably recently deleted, found on overseerr but not on Tautulli
-                results.append({
-                    "title": title,
-                    "type": plex_request["type"],
-                    "media_requested_by": media_requested_by,
-                    "media_added_at": str(media_added_at),
-                    "service_url": plex_request["media"]["serviceUrl"]
-                })
-                if plex_request["type"] not in self.unwatched_media_types:
-                    self.unwatched_media_types.append(plex_request["type"])
+        with Pool(processes=8) as pool:
+            with tqdm(total=self.args.num_requests) as pbar:
+                for result in pool.imap_unordered(self.get_request, plex_requests):
+                    pbar.update()
+                    if result is not None:
+                        results.append(result)
+                        if result["type"] not in self.unwatched_media_types:
+                            self.unwatched_media_types.append(result["type"])
 
         # Sort by oldest request to most recent
         self.unwatched_requests = sorted(results, key=lambda d: d["media_added_at"])
+
+    def get_request(self, plex_request):
+        plex_request["type"] = "series" if plex_request["type"] == "tv" else plex_request["type"]
+        media_added_at = plex_request["media"]["mediaAddedAt"]
+        media_requested_by = plex_request["requestedBy"]["plexUsername"]
+        one_month_ago = (datetime.utcnow() - timedelta(days=30))
+        if media_added_at:
+            media_added_at = datetime.strptime(media_added_at, "%Y-%m-%dT%H:%M:%S.%f%z").replace(tzinfo=None)
+
+        if not media_added_at or media_added_at > one_month_ago:
+            return None
+
+        tautulli_request = f"{self.args.tautulli_host}/api/v2?apikey={self.args.tautulli_token}" \
+                           f"&cmd=get_item_watch_time_stats&rating_key={plex_request['media']['ratingKey']}"
+        response = requests.get(tautulli_request)
+        watch_data = json.loads(response.text)["response"]["data"]
+        watch_number = [item["total_plays"] for item in watch_data]
+        if not any(watch_number):
+            response = requests.get(f"{self.args.tautulli_host}/api/v2?apikey={self.args.tautulli_token}"
+                                    f"&cmd=get_metadata&rating_key={plex_request['media']['ratingKey']}")
+            try:
+                title = json.loads(response.text)["response"]["data"]["title"]
+            except Exception as e:
+                return None  # This show was probably recently deleted, found on overseerr but not on Tautulli
+
+            return {
+                "title": title,
+                "type": plex_request["type"],
+                "media_requested_by": media_requested_by,
+                "media_added_at": str(media_added_at),
+                "service_url": plex_request["media"]["serviceUrl"]
+            }
 
 
 if __name__ == '__main__':

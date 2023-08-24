@@ -2,5 +2,6 @@
   "overseerr_host": "",
   "overseerr_token": "",
   "tautulli_host": "",
-  "tautulli_token": ""
+  "tautulli_token": "",
+  "num_requests": 100
 }

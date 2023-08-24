@@ -45,5 +45,6 @@ python3 find_unwatched_requests.py \
     --overseerr-host-url <overseerr_host_url> \
     --overseerr-token <overseerr_api_token> \
     --tautulli-url <tautulli_host_url> \
-    --tautulli-token <tautulli_api_token>
+    --tautulli-token <tautulli_api_token> \
+    --num-requests <integer_value>
 ```

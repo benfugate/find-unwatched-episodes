@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import re
 import json
 import time
 import requests
@@ -228,9 +227,9 @@ if __name__ == '__main__':
             print(traceback.format_exc())
         finally:
             if run_availability_sync:
-                print("Waiting 30 seconds for Plex to detect changes and refresh, and then triggering an Overseer "
+                print("Waiting 60 seconds for Plex to detect changes and refresh, and then triggering an Overseer "
                       "availability sync job.")
-                for timer in range(30):
+                for timer in range(60):
                     print(f"\r{timer}", end="")
                     time.sleep(1)
                 find_unwatched.run_post_job("availability-sync")

@@ -4,5 +4,7 @@
   "tautulli_host": "",
   "tautulli_token": "",
   "num_requests": 500,
-  "ignore_users": []
+  "ignore_users": [],
+  "verbose": false,
+  "DOCKER": false
 }

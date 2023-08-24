@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 import json
 import time
 import requests
@@ -12,7 +13,7 @@ from datetime import datetime, timedelta
 
 class FindUnwatchedRequests:
     def __init__(self):
-        with open("config.json") as f:
+        with open(f"{os.path.dirname(os.path.abspath(__file__))}/config.json") as f:
             defaults = json.load(f)
         parser = argparse.ArgumentParser()
         parser.add_argument("--skip-health-check", action="store_true",
@@ -29,10 +30,22 @@ class FindUnwatchedRequests:
                             help="number of overseerr requests to look through")
         parser.add_argument("--ignore-users", default=defaults["ignore_users"], action="extend",
                             nargs='+', type=str, help="users to not include in unwatched requests scan")
-        parser.add_argument("--verbose", action="store_true", help="Run in verbose mode")
+        parser.add_argument("--verbose", default=defaults["verbose"], action="store_true",
+                            help="Run in verbose mode")
+        self.docker = defaults["DOCKER"]
         self.args = parser.parse_args()
 
-        # Some hosts API's get real fussy about extra slashes
+        self.print_timestamp_if_docker()
+        print("Starting prune")
+
+        if not self.args.overseerr_host \
+                or not self.args.overseerr_token \
+                or not self.args.tautulli_host \
+                or not self.args.tautulli_token:
+            print("the following arguments are required: overseerr-host, overseerr-token, tautulli-host, tautulli-token")
+            exit(1)
+
+        # Some hosts APIs get real fussy about extra slashes
         self.args.tautulli_host = self.args.tautulli_host.rstrip("/")
         self.args.overseerr_host = self.args.overseerr_host.rstrip("/")
 
@@ -50,6 +63,10 @@ class FindUnwatchedRequests:
         self.all_content = []
         self.delete = []
 
+    def print_timestamp_if_docker(self):
+        if self.docker:
+            print(f"{time.time()}: ", end="")
+
     def _check_health(self):
         issues = []
         jobs = self._get_overseerr_jobs()
@@ -60,6 +77,7 @@ class FindUnwatchedRequests:
                                   "\tPlease try running again in a couple of minutes.")
         if issues:
             for issue in issues:
+                self.print_timestamp_if_docker()
                 print(issue)
             exit(0)
 
@@ -79,6 +97,7 @@ class FindUnwatchedRequests:
         # return json.loads(requests.get(f"{endpoint}", headers=headers).text)
         response = requests.post(f"{endpoint}", data=data, headers=headers)
         if response.status_code == 404:
+            self.print_timestamp_if_docker()
             print(f"Error with POST request:\n\tError: {response}\n\t{endpoint}: {data}")
 
     def _find_management_hosts(self):
@@ -139,6 +158,7 @@ class FindUnwatchedRequests:
                         delete_url = f"{host['host']}/api/v3/{host['content_type']}/{content_id}" \
                                      f"?apikey={host['token']}&deleteFiles=true"
                     else:
+                        self.print_timestamp_if_docker()
                         print(f"Failed to find the {host['content_type']} {request['title']} on "
                               f"{host['platform']}. Skipping")
                         continue
@@ -146,12 +166,14 @@ class FindUnwatchedRequests:
                     continue
 
                 response = requests.delete(delete_url)
+                self.print_timestamp_if_docker()
                 if response.status_code == 200:
                     print(f"Deleted {request['title']}")
                     content_deleted = True
                 else:
                     print(f"Failed to delete {request['title']}")
             except Exception as e:
+                self.print_timestamp_if_docker()
                 print(f"Error deleting \"{request['title']}\". Skipping.")
                 if self.args.verbose:
                     print(traceback.format_exc())
@@ -221,28 +243,37 @@ class FindUnwatchedRequests:
 if __name__ == '__main__':
     find_unwatched = FindUnwatchedRequests()
     find_unwatched.find_unwatched_requests()
-    find_unwatched.display_unwatched_requests()
 
-    if "movie" in find_unwatched.unwatched_media_types and input(f"Delete all unwatched movies? Y/N: ").lower() == "y":
-        find_unwatched.delete.append("movie")
-    if "series" in find_unwatched.unwatched_media_types and input(f"Delete all unwatched shows? Y/N: ").lower() == "y":
-        find_unwatched.delete.append("series")
+    if not find_unwatched.docker:
+        find_unwatched.display_unwatched_requests()
+        if ("movie" in find_unwatched.unwatched_media_types
+                and input(f"Delete all unwatched movies? Y/N: ").lower() == "y"):
+            find_unwatched.delete.append("movie")
+        if ("series" in find_unwatched.unwatched_media_types
+                and input(f"Delete all unwatched shows? Y/N: ").lower() == "y"):
+            find_unwatched.delete.append("series")
+    else:
+        find_unwatched.delete = ["series", "movie"]
+
     if find_unwatched.delete:
         run_availability_sync = False
         try:
             run_availability_sync = find_unwatched.delete_content()
         except Exception as e:
+            find_unwatched.print_timestamp_if_docker()
             print(traceback.format_exc())
         finally:
             if run_availability_sync:
+                find_unwatched.print_timestamp_if_docker()
                 print("Waiting 60 seconds for Plex to detect changes and refresh, and then triggering an Overseer "
                       "availability sync job.")
                 for timer in range(60):
                     print(f"\r{timer}", end="")
                     time.sleep(1)
                 find_unwatched.run_post_job("availability-sync")
-        if not run_availability_sync:
+        if not run_availability_sync and not find_unwatched.docker:
             print("\nNothing was deleted, so an availability sync was not triggered.")
             if input("Would you like to run one anyways? Y/N: ").lower() == "y":
                 find_unwatched.run_post_job("availability-sync")
-    print("\rDone!")
+    find_unwatched.print_timestamp_if_docker()
+    print("Done!")

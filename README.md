@@ -33,7 +33,35 @@ This allows a Plex admin to remove requests that were not truly desired by a use
 
 ---
 
+### Building
+
+I have this built into a docker container which runs daily at midnight. You can build it yourself using
+
+`docker build -t find-unwatched-requests .`
+
+within this root directory to build your own image, or you can pull my docker image
+
+`docker pull benfugate/find-unwatched-requests`
+
+---
+
 ### Usage
+
+#### Docker
+
+```
+docker run \
+    -e overseerr_host=<OVERSEERR_HOST_URL> \
+    -e overseerr_token=<OVERSEERR_TOKEN> \
+    -e tautulli_host=<TAUTULLI_HOST_URL> \
+    -e tautulli_token=<TAUTULLI_TOKEN> \
+    -e num_requests=<NUMBER_OF_REQUESTS_TO_CHECK> \
+    -e ignore_users=<LIST,OF,USERS,TO,IGNORE>
+    -e verbose=<true/false>
+    benfugate/find-unwatched-requests:latest
+```
+
+#### Other
 
 If config file has been filled out:
 

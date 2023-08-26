@@ -65,7 +65,7 @@ class FindUnwatchedRequests:
 
     def print_timestamp_if_docker(self):
         if self.docker:
-            print(f"{time.time()}: ", end="")
+            print(f"{datetime.now()}: ", end="")
 
     def _check_health(self):
         issues = []

@@ -8,7 +8,8 @@ RUN pip3 install -r requirements.txt && rm requirements.txt
 
 COPY cron-schedule /etc/cron.d/cron-schedule
 RUN chmod 0644 /etc/cron.d/cron-schedule && \
-    crontab /etc/cron.d/cron-schedule
+    crontab /etc/cron.d/cron-schedule && \
+    touch /var/log/cron.log
 
 COPY . /usr/src/app/
 COPY entrypoint.sh /

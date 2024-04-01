@@ -8,7 +8,7 @@ import argparse
 import traceback
 from tqdm import tqdm
 from multiprocessing import Pool
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 
 class FindUnwatchedRequests:
@@ -26,6 +26,8 @@ class FindUnwatchedRequests:
                             help="tautulli host url")
         parser.add_argument("--tautulli-token", default=defaults["tautulli_token"],
                             help="tautulli api token")
+        parser.add_argument("--wait-days", default=defaults["wait_days"],
+                            help="number of days to wait before deleting media")
         parser.add_argument("--num-requests", default=defaults["num_requests"],
                             help="number of overseerr requests to look through")
         parser.add_argument("--ignore-users", default=defaults["ignore_users"], action="extend",
@@ -211,11 +213,11 @@ class FindUnwatchedRequests:
         plex_request["type"] = "series" if plex_request["type"] == "tv" else plex_request["type"]
         media_added_at = plex_request["media"]["mediaAddedAt"]
         media_requested_by = plex_request["requestedBy"]["plexUsername"]
-        one_month_ago = (datetime.utcnow() - timedelta(days=30))
+        wait_time = datetime.now(timezone.utc) - timedelta(days=self.args.wait_days)
         if media_added_at:
-            media_added_at = datetime.strptime(media_added_at, "%Y-%m-%dT%H:%M:%S.%f%z").replace(tzinfo=None)
+            media_added_at = datetime.strptime(media_added_at, "%Y-%m-%dT%H:%M:%S.%f%z").replace(tzinfo=timezone.utc)
 
-        if not media_added_at or media_added_at > one_month_ago:
+        if not media_added_at or media_added_at > wait_time:
             return None
 
         tautulli_request = f"{self.args.tautulli_host}/api/v2?apikey={self.args.tautulli_token}" \
@@ -276,4 +278,4 @@ if __name__ == '__main__':
             if input("Would you like to run one anyways? Y/N: ").lower() == "y":
                 find_unwatched.run_post_job("availability-sync")
     find_unwatched.print_timestamp_if_docker()
-    print("Done!")
+    print("Done!\n")

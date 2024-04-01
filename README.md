@@ -3,7 +3,7 @@
 This is a simple script that looks through the last 500 Overseerr requests and...
 
 1. Filters out any request that has not been marked as available
-2. Filters out any request that has not been available for at least 1 month
+2. Filters out any request that has not been available for N days (default 14)
 3. Filters out any request that has not been watched by any user
 4. <b>Displays the unwatched movies/shows to the user</b>
 5. <b>Delete the unwatched media from the server</b>
@@ -55,6 +55,7 @@ docker run \
     -e overseerr_token=<OVERSEERR_TOKEN> \
     -e tautulli_host=<TAUTULLI_HOST_URL> \
     -e tautulli_token=<TAUTULLI_TOKEN> \
+    -e wait_days=<NUMBER_DAYS_TO_WAIT_BEFORE_DELETE> \
     -e num_requests=<NUMBER_OF_REQUESTS_TO_CHECK> \
     -e ignore_users=<LIST,OF,USERS,TO,IGNORE>
     -e verbose=<true/false>
@@ -74,5 +75,6 @@ python3 find_unwatched_requests.py \
     --overseerr-token <overseerr_api_token> \
     --tautulli-url <tautulli_host_url> \
     --tautulli-token <tautulli_api_token> \
+    --wait-days <integer_value>
     --num-requests <integer_value>
 ```

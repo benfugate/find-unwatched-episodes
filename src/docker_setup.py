@@ -9,6 +9,7 @@ config["overseerr_host"] = os.environ.get("overseerr_host")
 config["overseerr_token"] = os.environ.get("overseerr_token")
 config["tautulli_host"] = os.environ.get("tautulli_host")
 config["tautulli_token"] = os.environ.get("tautulli_token")
+config["wait_days"] = int(os.environ.get("wait_days")) if os.environ.get("wait_days") else config["wait_days"]
 config["num_requests"] = int(os.environ.get("num_requests")) if os.environ.get("num_requests") else config["num_requests"]
 config["ignore_users"] = os.environ.get("ignore_users").split(",") if os.environ.get("ignore_users") \
     else config["ignore_users"]

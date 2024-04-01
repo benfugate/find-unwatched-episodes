@@ -3,6 +3,7 @@
   "overseerr_token": "",
   "tautulli_host": "",
   "tautulli_token": "",
+  "wait_days": 14,
   "num_requests": 500,
   "ignore_users": [],
   "verbose": false,

@@ -1,3 +1,7 @@
+This should still work, but [Maintainerr](https://github.com/jorenn92/Maintainerr) is probably a better tool to replace this :)
+
+---
+
 ## find_unwatched_requests
 
 This is a simple script that looks through the last 500 Overseerr requests and...
